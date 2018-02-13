@@ -30,10 +30,10 @@ def parsedate(raw):
     try:
         if raw[2] == '-':
             dformat = '%d-%b-%y'
-            return datetime.strptime(raw,dformat).date()
+            return datetime.datetime.strptime(raw,dformat).date()
         elif raw[0:2] == '20':
             dformat = '%Y-%m-%d'
-            return datetime.strptime(raw,dformat).date()
+            return datetime.datetime.strptime(raw,dformat).date()
         else: # APPRPOX '%d/%m/%Y'
             mm,dd,yyyy = raw.split('/')
             return datetime.date(int(yyyy),int(mm),int(dd))
@@ -62,19 +62,23 @@ def collate(csvpath_list):
                 if row['size'] == 'Small Size':
                     continue
                 date = parseddate
-                print('DBG: rawDate={}, parsedDate={}'.format(row['launch'],date))
+                #print('DBG: rawDate={}, parsedDate={}'.format(row['launch'],date))
                 years.add(date.year)
                 permits[date] += 1
-                if row['chances'] == 'None':
+
+                if launch_days[(date.month, date.day)].get(date.year,0) > 0:
+                    # duplicate row
+                    appcnt = 0 #launch_days[(date.month, date.day)].get(date.year,0)
+                elif row['chances'] == 'None':
                     appcnt = 0
-                if row['chances'] == '':
+                elif row['chances'] == '':
                     appcnt = 0
-                elif row['chances'] == 'same':
-                    # same as previous count
-                    appcnt = launch_days[(date.month, date.day)].get(date.year,0)
-                elif row['chances'] == 'see above':
-                    # same as previous count
-                    appcnt = launch_days[(date.month, date.day)].get(date.year,0)
+                #!elif row['chances'] == 'same':
+                #!    # same as previous count
+                #!    appcnt = 0 #launch_days[(date.month, date.day)].get(date.year,0)
+                #!elif row['chances'] == 'see above':
+                #!    # same as previous count
+                #!    appcnt = 0 #launch_days[(date.month, date.day)].get(date.year,0)
                 else:
                     appcnt = int(row['chances'])
                 if not (2007 <= date.year <= 2018):
@@ -89,7 +93,7 @@ def collate(csvpath_list):
     outcsv = 'collated.csv'
     with open(outcsv, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(['Launch(m-d)'] + sorted(years))
+        writer.writerow(['Lday'] + sorted(years))
         #for (m,d) in launch_days.keys():
         for (m,d) in product(range(1,13), range(1,32)):
             numapp_list = []
@@ -99,14 +103,21 @@ def collate(csvpath_list):
                 except: # date out of range
                     numapp_list.append(0)
                 else:
+                    if 0==permits[date]:
+                        numapp_list.append(0)
+                        continue
                     prob = 1.0 if (0 == launch_days[(m,d)].get(year,0)) else permits[date]/launch_days[(m,d)].get(year,0.0)
-                    numapp_list.append(prob)
+                    ratio = launch_days[(m,d)].get(year,0.0)/permits[date]
+                    #!print('DBG: permits[{}] = {}; ratio={}; apps={}'
+                    #!      .format(str(date),permits[date],ratio,launch_days[(m,d)].get(year,0.0)))
+                    numapp_list.append(ratio)
+                    #numapp_list.append(prob)
                     #numapp_list.append(launch_days[(m,d)].get(year,0))
             if not all(v == 0 for v in numapp_list):
                 writer.writerow(['{:02d}-{:02d}'.format(m,d)] + numapp_list)
-        writer.writerow(['Cnts=Prob'])
-    print('Permits(>1)={}'
-          .format([(str(date),v) for (date,v) in permits.items() if (v > 1)  ]))
+        writer.writerow(['Cnts=Ratio'])
+    #!print('Permits(>1)={}'
+    #!      .format(pformat([(str(date),v) for (date,v) in permits.items() if (v > 1)  ])))
     print('Wrote:',outcsv)
 
 
@@ -156,7 +167,7 @@ def main():
         #'tabula-2011_Lottery_Statistics.csv',
         #'tabula-2012_Lottery_Statistics.csv',
         #'tabula-2013_Lottery_Statistics.csv',
-        #'tabula-2014_Lottery_Statistics.csv',
+        'tabula-2014_Lottery_Statistics.csv',
         'tabula-2015_Lottery_Statistics.csv',
         'tabula-2016_Lottery_Statistics.csv',
         'tabula-2017_Lottery_Statistics.csv',
