@@ -12,16 +12,42 @@ from collections import defaultdict
 from pprint import pformat
 from pathlib import Path
 from itertools import product
-import dateparser
+#import dateparser
 
+####
+####  Date formats used
+#
+#   | 2007 | 04-Jan-07  |
+#   | 2007 | 05-Jan-07  |
+#   |------+------------|
+#   | 2008 | 2008-01-01 |
+#   | 2012 | 2012-01-03 |
+#   |------+------------|
+#   | 2013 | 1/1/2013   |
+#   | 2018 | 1/2/2018   |
 
+def parsedate(raw):
+    try:
+        if raw[2] == '-':
+            dformat = '%d-%b-%y'
+            return datetime.strptime(raw,dformat).date()
+        elif raw[0:2] == '20':
+            dformat = '%Y-%m-%d'
+            return datetime.strptime(raw,dformat).date()
+        else: # APPRPOX '%d/%m/%Y'
+            mm,dd,yyyy = raw.split('/')
+            return datetime.date(int(yyyy),int(mm),int(dd))
+    except Exception as err:
+        #print('Bad parse on <{}>: {}'.format(raw,err))
+        return None
+
+        
 def collate(csvpath_list):
     """Combine data from multiple CSV files into one."""
     #print('DBG: csvpath_list=',list(csvpath_list))
     columnnames = ['launch','size','apps','chances','won_chances']
     launch_days = defaultdict(lambda : defaultdict(int)) # ld[(m,d)] = dict[year] = num_apps
-    dupe = defaultdict(int) # number of EXTRA permits (over one) available
-    dateformats=['%Y-%m-%d', '%d-%b-%y', '%d/%m/%Y']
+    permits = defaultdict(int) # permits[date]=N; number of permits available
     years = set()
 
     for csvpath in csvpath_list:
@@ -29,27 +55,34 @@ def collate(csvpath_list):
         with open(csvpath, newline='') as csvfile:
             reader = csv.DictReader(csvfile, fieldnames=columnnames)
             for row in reader:
-                date = dateparser.parse(row['launch'], date_formats=dateformats)
-                if date is None:
+                parseddate = parsedate(row['launch'])
+                #print('DBG parseddate=',parseddate)
+                if parseddate is None:
                     continue
                 if row['size'] == 'Small Size':
                     continue
+                date = parseddate
+                print('DBG: rawDate={}, parsedDate={}'.format(row['launch'],date))
                 years.add(date.year)
-                if launch_days[(date.month, date.day)].get(date.year,0) > 0:
-                    dupe[date] += 1
-                if row['apps'] == 'None':
+                permits[date] += 1
+                if row['chances'] == 'None':
                     appcnt = 0
-                elif row['apps'] == 'same':
+                if row['chances'] == '':
+                    appcnt = 0
+                elif row['chances'] == 'same':
                     # same as previous count
                     appcnt = launch_days[(date.month, date.day)].get(date.year,0)
-                elif row['apps'] == 'see above':
+                elif row['chances'] == 'see above':
                     # same as previous count
                     appcnt = launch_days[(date.month, date.day)].get(date.year,0)
                 else:
-                    appcnt = int(row['apps'])
+                    appcnt = int(row['chances'])
                 if not (2007 <= date.year <= 2018):
-                    print('WARNING: Parsed year={} in {}'.format(date.year, str(csvfile)))
+                    print('WARNING: Parsed year={} in {}'.format(date.year, str(csvpath)))
                     continue
+                #!if not (2007 <= date.year <= 2014):
+                #!    print('WARNING: IGNORING year={} in {}'.format(date.year, str(csvpath)))
+                #!    continue
                 launch_days[(date.month, date.day)][date.year] += appcnt
                     
     #print('DBG launch_days={}'.format(pformat(launch_days)))
@@ -66,12 +99,14 @@ def collate(csvpath_list):
                 except: # date out of range
                     numapp_list.append(0)
                 else:
-                    permits = dupe[date]+1
-                    numapp_list.append(launch_days[(m,d)].get(year,0)/permits)
+                    prob = 1.0 if (0 == launch_days[(m,d)].get(year,0)) else permits[date]/launch_days[(m,d)].get(year,0.0)
+                    numapp_list.append(prob)
+                    #numapp_list.append(launch_days[(m,d)].get(year,0))
             if not all(v == 0 for v in numapp_list):
                 writer.writerow(['{:02d}-{:02d}'.format(m,d)] + numapp_list)
-        writer.writerow(['Counts are Applications/AvailablePermit'])
-    print('dupe=',dupe)
+        writer.writerow(['Cnts=Prob'])
+    print('Permits(>1)={}'
+          .format([(str(date),v) for (date,v) in permits.items() if (v > 1)  ]))
     print('Wrote:',outcsv)
 
 
@@ -113,7 +148,23 @@ def main():
     logging.debug('Debug output is enabled in %s !!!', sys.argv[0])
 
     datadir='~/sandbox/notes/trips/gc-river-data/'
-    collate(Path(datadir).expanduser().glob('tabula-20*_Statistics.csv'))
+    csv_list = [
+        #'tabula-2007_Lottery_Statistics.csv',
+        #'tabula-2008_Lottery_Statistics.csv',
+        #'tabula-2009_Lottery_Statistics.csv',
+        #'tabula-2010_Lottery_Statistics.csv',
+        #'tabula-2011_Lottery_Statistics.csv',
+        #'tabula-2012_Lottery_Statistics.csv',
+        #'tabula-2013_Lottery_Statistics.csv',
+        #'tabula-2014_Lottery_Statistics.csv',
+        'tabula-2015_Lottery_Statistics.csv',
+        'tabula-2016_Lottery_Statistics.csv',
+        'tabula-2017_Lottery_Statistics.csv',
+        'tabula-2018_Lottery_Statistics.csv',
+        ]
+    path_list = [(Path(datadir).expanduser() / cfile) for cfile in csv_list]
+    #collate(Path(datadir).expanduser().glob('tabula-20*_Statistics.csv'))
+    collate(path_list)
 
 if __name__ == '__main__':
     main()
